@@ -1,5 +1,14 @@
 {
   "name": "dexter-lite",
-  "owner": { "name": "jaisharmz" },
-  "plugins": [{ "name": "dexter", "source": "./", "description": "Per-folder memory: rules learned from your corrections, with counts." }]
+  "owner": {
+    "name": "jaisharmz"
+  },
+  "plugins": [
+    {
+      "name": "dexter",
+      "source": "./",
+      "description": "Per-folder memory: rules learned from your corrections, with counts."
+    }
+  ],
+  "description": "dexter: per-folder memory for Claude Code"
 }
