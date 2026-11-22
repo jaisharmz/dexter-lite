@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { apply, autoReorg, ensureIds, formatReorg, logAccess, notes, readNote, reorg, suggest, terms, undo } from "./notes.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
 const ROOT = path.dirname(path.dirname(SELF));
@@ -20,6 +21,7 @@ const WEAK = /^(no|nope|wrong|actually|instead)\b|\b(don't|do not|should(n't)?|m
 const today = () => new Date().toISOString().slice(0, 10);
 const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "");
 const home = (dir) => path.join(dir, ".dexter");
+const pidFile = (session) => path.join(os.tmpdir(), `dexter-pid-${session}`);
 const flagFile = (session) => path.join(os.tmpdir(), `dexter-flag-${session}.json`);
 
 function log(dir, event) {
@@ -158,12 +160,13 @@ function sessionStart(dir) {
     parts.push(live.slice(0, MAX_RULES).map(format).join("\n"));
     if (live.length > MAX_RULES) parts.push(`(${live.length - MAX_RULES} lower-scored rules are in .dexter/MEMORY.md)`);
   }
-  const notes = path.join(home(dir), "memory");
-  if (fs.existsSync(notes)) {
-    const list = fs.readdirSync(notes).filter((f) => f.endsWith(".md"))
-      .map((f) => `- .dexter/memory/${f}: ${frontmatter(path.join(notes, f), "description")}`);
-    if (list.length) parts.push("## Notes (open one when it matters)\n" + list.join("\n"));
-  }
+  ensureIds(dir);
+  const reorganized = autoReorg(dir);
+  const list = notes(dir);
+  const line = (n) => `- ${path.relative(dir, n.file)}: ${n.meta.description || ""}`;
+  if (list.length && list.length <= 30) parts.push("## Notes (open one when it matters)\n" + list.map(line).join("\n"));
+  else if (list.length) parts.push(`## Notes\n${list.length} notes in .dexter/memory. The ones that match a message are suggested with it.`);
+  if (reorganized) parts.push(`## Notes were reorganized\n${reorganized}\nTell the user in one line at the start of your first reply. "reorg undo" restores the backup.`);
   const skills = path.join(home(dir), "skills");
   if (fs.existsSync(skills)) {
     const list = fs.readdirSync(skills).filter((s) => fs.existsSync(path.join(skills, s, "SKILL.md")))
@@ -185,11 +188,29 @@ function hook(kind, input) {
   if (kind === "session-start") return context("SessionStart", sessionStart(dir));
   if (kind === "prompt") {
     const prompt = input.prompt || "";
+    const out = [];
+    if (fs.existsSync(home(dir))) {
+      // Log every prompt's keywords and the notes suggested for it; reads attach to this pid.
+      const pid = `${input.session_id}:${Date.now()}`;
+      fs.writeFileSync(pidFile(input.session_id), pid);
+      const hits = ABLATE.has("noretrieve") ? [] : suggest(dir, prompt);
+      logAccess(dir, { ev: "prompt", pid, terms: terms(prompt), candidates: hits.map((n) => n.meta.id) });
+      if (hits.length) out.push("dexter: notes that may matter here (open the ones you need):\n" + hits.map((n) => `- ${path.relative(dir, n.file)}: ${n.meta.description || ""}`).join("\n"));
+    }
     const strong = STRONG.test(prompt);
-    if (ABLATE.has("noprompt") || !(strong || WEAK.test(prompt))) return;
-    if (strong) fs.writeFileSync(flagFile(input.session_id), JSON.stringify({ ts: Date.now() }));
-    log(dir, { ev: "flag", strong });
-    return context("UserPromptSubmit", `dexter: this message may correct you or set a standing preference. If it says how things should be done beyond this one request, record it before you finish, with dexter add (or up <ID> --repeat if a listed rule already says it). If it is a one-off request, record nothing.`);
+    if (!ABLATE.has("noprompt") && (strong || WEAK.test(prompt))) {
+      if (strong) fs.writeFileSync(flagFile(input.session_id), JSON.stringify({ ts: Date.now() }));
+      log(dir, { ev: "flag", strong });
+      out.push("dexter: this message may correct you or set a standing preference. If it says how things should be done beyond this one request, record it before you finish, with dexter add (or up <ID> --repeat if a listed rule already says it). If it is a one-off request, record nothing.");
+    }
+    if (out.length) context("UserPromptSubmit", out.join("\n\n"));
+    return;
+  }
+  if (kind === "read") {
+    const file = path.resolve(input.tool_input?.file_path || "");
+    if (!file.startsWith(path.join(home(dir), "memory") + path.sep) || !fs.existsSync(file)) return;
+    logAccess(dir, { ev: "read", pid: read(pidFile(input.session_id)), id: readNote(file).meta.id, path: path.relative(dir, file) });
+    return;
   }
   if (kind === "stop") {
     const flag = flagFile(input.session_id);
@@ -228,8 +249,9 @@ try {
   else if (cmd === "retire") console.log(retire(opts.dir, args[0], args.slice(1).join(" ")));
   else if (cmd === "supersede") console.log(supersede(opts.dir, args[0], text(args.slice(1))));
   else if (cmd === "report") console.log(report(opts.dir));
+  else if (cmd === "reorg") console.log(args[0] === "apply" ? apply(opts.dir) : args[0] === "undo" ? undo(opts.dir) : formatReorg(reorg(opts.dir)));
   else if (cmd === "list") console.log(allRules(opts.dir).map(format).join("\n") || "no rules yet");
-  else console.log("dexter add|up|down|retire|supersede|report|list [--dir D] [--skill S] [--repeat] [--force]");
+  else console.log("dexter add|up|down|retire|supersede|report|list|reorg [apply|undo] [--dir D] [--skill S] [--repeat] [--force]");
 } catch (e) {
   if (cmd === "hook") process.exit(0); // a broken hook must never block the session
   console.error(`dexter: ${e.message}`);

@@ -13,18 +13,33 @@ marked as having failed.
 
 To try it for one session: `claude --plugin-dir path/to/dexter-lite`.
 
-**How it works.** Three hooks and one script, `bin/dexter.mjs`:
+**How it works.** Four hooks and two scripts, `bin/dexter.mjs` and `bin/notes.mjs`:
 - **Session start:** loads the folder's rules, notes and skills.
-- **Prompt:** flags messages that look like corrections.
-- **Stop:** blocks once if a flagged correction was never recorded.
+- **Prompt:** suggests matching notes and flags messages that look like corrections.
+- **Read:** logs which notes were opened.
+- **Stop:** blocks once if a correction marked as lasting ("from now on", "always") was never recorded.
 
 Only the script edits rules, so a model never rewrites the ledger. A folder gets a
 `.dexter/` the first time something is remembered there, and in a git repo it is added to
 `.git/info/exclude`.
 
-**Commands:**
-- `node bin/dexter.mjs report` shows how often a correction had to be repeated.
+**Notes and reorganization.** Facts that aren't rules live in `.dexter/memory/*.md`, one per
+file, each with a stable `id`. Each message gets the notes that match it, ranked by BM25,
+and every note Claude opens is logged with the prompt that led to it. That log is what keeps
+the layout honest. Every 50 logged prompts, dexter looks for notes that are always opened
+together, notes that look like duplicates, and notes nobody opens. It proposes merges and
+archives, then replays every logged prompt against the current layout and against each change
+on its own. A change is kept only if no prompt loses a note it needed, and a merge must also
+find more of what was opened or read at least 10% fewer tokens on the prompts it touches.
+Passing changes are applied with a backup: merged notes become stubs that point to the
+survivor, and `reorg undo` restores everything. `node eval/reorg_test.mjs` checks this on a
+memory built to have drifted, with no model calls. Split topics get merged, dead notes
+archived, look-alike notes that aren't duplicates kept apart, and a bad merge rejected.
+
+**Commands** (`node bin/dexter.mjs <command>`):
+- `report` shows how often a correction had to be repeated.
 - `list` shows every rule.
+- `reorg` shows the signals and the replay of each change, `reorg apply` applies a passing plan, and `reorg undo` restores the last backup.
 
 **Does it help?** `python3 eval/run.py` runs a nine-session project on Haiku and teaches it
 eight arbitrary conventions as corrections, one per session (a header line, logging instead of
