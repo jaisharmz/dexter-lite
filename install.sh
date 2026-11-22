@@ -12,6 +12,10 @@ cp "$src/DEXTER.md" "$dir/.dexter/DEXTER.md"
 # CLAUDE.local.md is personal and loaded by Claude Code; one import line hooks the layer in.
 grep -qxF "@.dexter/DEXTER.md" "$dir/CLAUDE.local.md" 2>/dev/null \
   || echo "@.dexter/DEXTER.md" >> "$dir/CLAUDE.local.md"
+# A CLAUDE.local.md stops Claude Code reading AGENTS.md, so import it back.
+if [ -f "$dir/AGENTS.md" ]; then
+  grep -qxF "@AGENTS.md" "$dir/CLAUDE.local.md" || echo "@AGENTS.md" >> "$dir/CLAUDE.local.md"
+fi
 
 # Keep it out of the host repo without editing its .gitignore.
 if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
