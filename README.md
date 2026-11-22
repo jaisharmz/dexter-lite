@@ -58,4 +58,6 @@ The gap comes from capture. Native memory saved 2 or 3 of the 8 conventions per 
 saved all 8 in every run, and its Stop hook never had to fire. With both capture hooks
 turned off it still followed 94 to 99%, because the always-loaded instructions and a single
 command to record a rule do most of the work. The tables per rule are in
-[`eval/results/2026-11-22-haiku/summary.md`](eval/results/2026-11-22-haiku/summary.md).
+[`eval/results/2026-11-22-haiku/summary.md`](eval/results/2026-11-22-haiku/summary.md). One
+clean run in that table lost a rule to shell quoting. Rules now go in by heredoc, and a
+two-run check of v0.2.0 followed 100% (72 of 72).
