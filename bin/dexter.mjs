@@ -38,7 +38,7 @@ function ensure(dir) {
   fs.mkdirSync(home(dir), { recursive: true });
   fs.writeFileSync(memory, "# Memory\n\nRules learned from corrections. Edited only by dexter.\n\n");
   try {
-    const git = (...a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8" }).trim();
+    const git = (...a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     const exclude = git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude");
     const line = `/${git("rev-parse", "--show-prefix")}.dexter/`;
     if (!read(exclude).split("\n").includes(line)) {
@@ -200,7 +200,7 @@ function hook(kind, input) {
     const recorded = events(dir).some((e) => e.ts >= ts && ["add", "up", "repeat", "down", "supersede", "retire"].includes(e.ev));
     if (recorded) return;
     log(dir, { ev: "block" });
-    console.log(JSON.stringify({ decision: "block", reason: `dexter: the user's last message looked like a correction or a standing preference, and nothing was recorded. If it applies beyond this request, record it now: node "${SELF}" --dir "${dir}" add "<one imperative line>". If it was a one-off, finish without recording.` }));
+    console.log(JSON.stringify({ decision: "block", reason: `dexter: the user's last message looked like a correction or a standing preference, and nothing was recorded. If it applies beyond this request, record it now with dexter add, as the memory instructions show. If it was a one-off, finish without recording.` }));
   }
 }
 
@@ -217,13 +217,16 @@ for (let i = 0; i < argv.length; i++) {
   else rest.push(a);
 }
 const [cmd, ...args] = rest;
+// Rule text comes on stdin (a quoted heredoc), because backticks or $ inside a shell
+// argument get executed and silently cut the rule short.
+const text = (fromArgs) => (fromArgs.length ? fromArgs.join(" ") : fs.readFileSync(0, "utf8")).trim();
 try {
   if (cmd === "hook") hook(args[0], JSON.parse(fs.readFileSync(0, "utf8") || "{}"));
-  else if (cmd === "add") console.log(add(opts.dir, args.join(" "), opts));
+  else if (cmd === "add") console.log(add(opts.dir, text(args), opts));
   else if (cmd === "up") console.log(vote(opts.dir, args[0], 1, opts));
   else if (cmd === "down") console.log(vote(opts.dir, args[0], -1, opts));
   else if (cmd === "retire") console.log(retire(opts.dir, args[0], args.slice(1).join(" ")));
-  else if (cmd === "supersede") console.log(supersede(opts.dir, args[0], args.slice(1).join(" ")));
+  else if (cmd === "supersede") console.log(supersede(opts.dir, args[0], text(args.slice(1))));
   else if (cmd === "report") console.log(report(opts.dir));
   else if (cmd === "list") console.log(allRules(opts.dir).map(format).join("\n") || "no rules yet");
   else console.log("dexter add|up|down|retire|supersede|report|list [--dir D] [--skill S] [--repeat] [--force]");
