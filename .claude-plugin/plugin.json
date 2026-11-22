@@ -1,0 +1,5 @@
+{
+  "name": "dexter",
+  "description": "Per-folder memory: rules learned from your corrections, with counts, so a correction never has to be given twice.",
+  "version": "0.1.0"
+}

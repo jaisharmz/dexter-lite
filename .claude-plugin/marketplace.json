@@ -1,0 +1,5 @@
+{
+  "name": "dexter-lite",
+  "owner": { "name": "jaisharmz" },
+  "plugins": [{ "name": "dexter", "source": "./", "description": "Per-folder memory: rules learned from your corrections, with counts." }]
+}
