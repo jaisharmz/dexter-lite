@@ -12,7 +12,10 @@ const ROOT = path.dirname(path.dirname(SELF));
 const ABLATE = new Set((process.env.DEXTER_ABLATE || "").split(",").filter(Boolean));
 const MAX_RULES = 80;
 const RULE = /^- \[(R\d+)\] (.+?) · (\d{4}-\d{2}-\d{2}) · (.*)$/;
-const CORRECTION = /^(no|nope|wrong|actually|stop|don't|do not|never|always|instead|please don't)\b|\b(from now on|going forward|in the future|next time|remember (that|to)|always|never|don't|do not|instead of|rather than|not .{1,40}, (use|but)|i (said|told you|asked)|we (use|don't|never|always|prefer)|should(n't)? (be|use|have|go)|must|needs? to|prefer)\b/i;
+// Strong: the user marks something as lasting, so an unrecorded one blocks the turn once.
+// Weak: it may be a correction, so the model is only nudged to decide.
+const STRONG = /\b(from now on|going forward|in the future|next time|remember|always|never|every time|whenever|i (said|told you|asked)|again|keep doing|stop doing|we (always|never|use|don't)|in this (codebase|project|repo))\b/i;
+const WEAK = /^(no|nope|wrong|actually|instead)\b|\b(don't|do not|should(n't)?|must|needs? to|prefer|instead of|rather than)\b/i;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "");
@@ -181,9 +184,11 @@ function hook(kind, input) {
   const context = (event, text) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } }));
   if (kind === "session-start") return context("SessionStart", sessionStart(dir));
   if (kind === "prompt") {
-    if (ABLATE.has("noprompt") || !CORRECTION.test(input.prompt || "")) return;
-    fs.writeFileSync(flagFile(input.session_id), JSON.stringify({ ts: Date.now() }));
-    log(dir, { ev: "flag" });
+    const prompt = input.prompt || "";
+    const strong = STRONG.test(prompt);
+    if (ABLATE.has("noprompt") || !(strong || WEAK.test(prompt))) return;
+    if (strong) fs.writeFileSync(flagFile(input.session_id), JSON.stringify({ ts: Date.now() }));
+    log(dir, { ev: "flag", strong });
     return context("UserPromptSubmit", `dexter: this message may correct you or set a standing preference. If it says how things should be done beyond this one request, record it before you finish, with dexter add (or up <ID> --repeat if a listed rule already says it). If it is a one-off request, record nothing.`);
   }
   if (kind === "stop") {

@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 import tokenize
 from concurrent.futures import ThreadPoolExecutor
@@ -93,6 +94,21 @@ def snapshot(project):
     return {p: p.stat().st_mtime for p in project.rglob("*.py") if ".dexter" not in p.parts}
 
 
+_PLUGIN = []
+
+
+def plugin_copy():
+    """Claude Code refuses writes inside a loaded plugin's folder, so load a copy that is
+    outside every project the run writes to."""
+    if not _PLUGIN:
+        dest = Path(tempfile.mkdtemp(prefix="dexter-plugin-"))
+        for part in (".claude-plugin", "hooks", "bin", "DEXTER.md"):
+            src = REPO / part
+            (shutil.copytree if src.is_dir() else shutil.copy)(src, dest / part)
+        _PLUGIN.append(str(dest))
+    return _PLUGIN[0]
+
+
 def claude(project, cond, prompt, model, resume=None):
     cfg = CONDITIONS[cond]
     settings = dict(cfg["settings"])
@@ -101,7 +117,7 @@ def claude(project, cond, prompt, model, resume=None):
     cmd = ["claude", "-p", "--model", model, "--output-format", "json", "--setting-sources", "project,local",
            "--permission-mode", "acceptEdits", "--allowedTools", *ALLOWED, "--settings", json.dumps(settings)]
     if cfg.get("plugin"):
-        cmd += ["--plugin-dir", str(REPO)]
+        cmd += ["--plugin-dir", plugin_copy()]
     if resume:
         cmd += ["--resume", resume]
     env = dict(os.environ, DEXTER_ABLATE=cfg.get("ablate", ""))
